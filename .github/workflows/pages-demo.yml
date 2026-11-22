@@ -1,0 +1,71 @@
+name: Publish GitHub Pages demo
+
+on:
+  push:
+    branches: [arena/f3008fd8-digi1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-demo
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: demo
+          POSTGRES_PASSWORD: demo
+          POSTGRES_DB: demo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://demo:demo@localhost:5432/demo
+      NEXT_TELEMETRY_DISABLED: 1
+      PAGES_BASE_PATH: /digi1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Populate disposable demo database
+        run: npx tsx src/db/setup.ts
+      - run: npm run build
+      - name: Render read-only demo
+        run: |
+          npm run start -- --hostname 127.0.0.1 > /tmp/demo-server.log 2>&1 &
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3000/api/health > /dev/null; then
+              node scripts/build-pages-demo.mjs
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/demo-server.log
+          exit 1
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
