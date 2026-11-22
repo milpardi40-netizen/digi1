@@ -1,0 +1,8 @@
+{
+  "platform": "docker",
+  "app": "honarbazar",
+  "port": 3000,
+  "healthCheck": {
+    "command": "wget -qO- http://localhost:3000/api/health || exit 1"
+  }
+}
